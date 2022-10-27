@@ -74,7 +74,9 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
       foreach ($submittedFields as $fieldKey => $fieldValue) {
         if ($this->isWillYouAttendfield($fieldKey, $customFieldWillYouAttend)) {
           if (!$this->isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants)) {
-            $invalidFields[$fieldKey] = 'Max. number of physical participants reached. You must follow it online on the selected day.';
+            $invalidFields[$fieldKey] = 'ERROR: Your submission is not accepted!<br>Please note that the number of seats in the meeting room is restricted, therefore if you can no longer opt for attendance in person you can still attend the event ONLINE.
+If you would prefer to take part in person, you can still indicate this in the notes field. In case some other participants cancel their attendance, we will take your preference into account and will let you know if you can participate in the meeting room.
+Thank you for your understanding.';
           }
         }
       }
