@@ -107,7 +107,7 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
   }
 
   private function getMaxPhysicalParticipants($eventId) {
-    $events = \Civi\Api4\Event::get()
+    $events = \Civi\Api4\Event::get(FALSE)
       ->addSelect('Event_topic.Maximum_participants_in_meeting_room')
       ->addWhere('id', '=', $eventId)
       ->setLimit(1)
@@ -139,7 +139,7 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
     $customFieldName = $this->presenceOfDay[$dayNumber][1];
     $willAttendInMeetingRoom = 1;
 
-    $participants = \Civi\Api4\Participant::get()
+    $participants = \Civi\Api4\Participant::get(FALSE)
       ->addSelect("Participant_Presence.$customFieldName")
       ->addWhere('event_id', '=', $eventId)
       ->addWhere("Participant_Presence.$customFieldName", '=', $willAttendInMeetingRoom)
