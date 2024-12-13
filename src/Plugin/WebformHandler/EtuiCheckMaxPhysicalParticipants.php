@@ -64,7 +64,7 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
     $submittedFields = $formState->getValues();
     foreach ($submittedFields as $fieldKey => $fieldValue) {
       if ($this->isFieldYourPresence($fieldKey)) {
-        $dayNumber = $this->getDayNumber($fieldValue);
+        $dayNumber = $this->getDayNumber($fieldKey);
 
         if ($this->willThePersonAttendOnDay($formState, $dayNumber) && $fieldValue == $this->willTakePartInTheMeetingRoom) {
           $this->checkAvailability($formState, $fieldKey, $dayNumber);
