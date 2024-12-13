@@ -42,48 +42,50 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
 
   private $willTakePartInTheMeetingRoom = 1;
   private $willTakePartOnline = 2;
+  private $maxPhysicalParticipants = 0;
 
-  /**
-   * Webform validate handler.
-   *
-   * @WebformHandler(
-   *   id = "etui_webformutils_custom_validator",
-   *   label = @Translation("Alter form to validate it"),
-   *   category = @Translation("Settings"),
-   *   description = @Translation("Check number of physical participants."),
-   *   cardinality = \Drupal\webform\Plugin\WebformHandlerInterface::CARDINALITY_SINGLE,
-   *   results = \Drupal\webform\Plugin\WebformHandlerInterface::RESULTS_PROCESSED,
-   *   submission = \Drupal\webform\Plugin\WebformHandlerInterface::SUBMISSION_OPTIONAL,
-   * )
-   */
+  private $eventId = 0;
+
   public function validateForm(array &$form, FormStateInterface $form_state, WebformSubmissionInterface $webform_submission) {
-    $invalidFields = $this->validateNumberOfPhysicalParticipants($form_state, $webform_submission);
-    if (count($invalidFields) > 0) {
-      $this->markInvalidFields($invalidFields, $form_state);
+    $this->eventId = $this->getEventId($webform_submission);
+    $max = $this->getMaxPhysicalParticipants($this->eventId);
+
+    if ($this->maxPhysicalParticipants == 'unlimited') {
+      return;
+    }
+    else {
+      $this->maxPhysicalParticipants = (int)$max;
+      $this->validateNumberOfPhysicalParticipants($form_state, $webform_submission);
     }
   }
 
   private function validateNumberOfPhysicalParticipants(FormStateInterface $formState, WebformSubmissionInterface $webform_submission) {
-    $invalidFields = [];
-    $eventId = $this->getEventId($webform_submission);
-
-    $maxPhysicalParticipants = $this->getMaxPhysicalParticipants($eventId);
-    if ($maxPhysicalParticipants == 'unlimited') {
-      return [];
-    }
-
+    // loop over the submitted fields
     $submittedFields = $formState->getValues();
-    foreach ($this->willYouAttendDay as $dayNumber => $customFieldWillYouAttend) {
-      foreach ($submittedFields as $fieldKey => $fieldValue) {
-        if ($this->isWillYouAttendfield($fieldKey, $customFieldWillYouAttend)) {
-          if ($fieldValue == $this->willTakePartInTheMeetingRoom && !$this->isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants)) {
-            $fieldKeyPresence = $this->getPresenceKeyOfDay($dayNumber, $submittedFields);
-            $invalidFields[$fieldKeyPresence] = 'ERROR: Your submission is not accepted! Please note that the number of seats in the meeting room is restricted, therefore if you can no longer opt for attendance in person you can still attend the event ONLINE. If you would prefer to take part in person, you can still indicate this in the notes field. In case some other participants cancel their attendance, we will take your preference into account and will let you know if you can participate in the meeting room. Thank you for your understanding.';
-          }
+    foreach ($submittedFields as $fieldKey => $fieldValue) {
+      if ($this->isFieldYourPresence($fieldKey)) {
+        $dayNumber = $this->getDayNumber($fieldValue);
+
+        if ($this->willThePersonAttendOnDay($formState, $dayNumber) && $fieldValue == $this->willTakePartInTheMeetingRoom) {
+          $this->checkAvailability($formState, $fieldKey, $dayNumber);
         }
       }
     }
-    return $invalidFields;
+  }
+
+  private function checkAvailability(FormStateInterface $formState, string $fieldKey, int $dayNumber) {
+    $customFieldName = $this->presenceOfDay[$dayNumber][1];
+
+    $participants = \Civi\Api4\Participant::get(FALSE)
+      ->selectRowCount()
+      ->addWhere('event_id', '=', $this->eventId)
+      ->addWhere("Participant_Presence.$customFieldName", '=', $this->willTakePartInTheMeetingRoom)
+      ->addWhere('status_id', 'IN', [1, 2])
+      ->execute();
+
+    if ($participants->countMatched() >= $this->maxPhysicalParticipants) {
+      $formState->setErrorByName($fieldKey, 'ERROR: Your submission is not accepted! Please note that the number of seats in the meeting room is restricted, therefore if you can no longer opt for attendance in person you can still attend the event ONLINE. If you would prefer to take part in person, you can still indicate this in the notes field. In case some other participants cancel their attendance, we will take your preference into account and will let you know if you can participate in the meeting room. Thank you for your understanding.');
+    }
   }
 
   private function getEventId(WebformSubmissionInterface $webform_submission) {
@@ -123,47 +125,51 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
     }
   }
 
-  private function markInvalidFields($fieldErrors, FormStateInterface $form_state) {
-    foreach ($fieldErrors as $fieldKey => $errorMessage) {
-      $form_state->setErrorByName($fieldKey, $errorMessage);
-    }
-  }
-
-  private function isWillYouAttendfield($fieldKey, $customFieldWillYouAttend) {
-    if (strpos($fieldKey, $customFieldWillYouAttend[0]) > 0) {
-      return TRUE;
-    }
-    else {
-      return FALSE;
-    }
-  }
-
-  private function isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants) {
-    $customFieldName = $this->presenceOfDay[$dayNumber][1];
-
-    $participants = \Civi\Api4\Participant::get(FALSE)
-      ->selectRowCount()
-      ->addWhere('event_id', '=', $eventId)
-      ->addWhere("Participant_Presence.$customFieldName", '=', $this->willTakePartInTheMeetingRoom)
-      ->addWhere('status_id', 'IN', [1, 2])
-      ->execute();
-
-    if ($participants->countMatched() >= $maxPhysicalParticipants) {
-      return FALSE;
-    }
-    else {
-      return TRUE;
-    }
-  }
-
-  private function getPresenceKeyOfDay($dayNumber, $submittedFields) {
-    $fieldToFind = $this->presenceOfDay[$dayNumber][0];
-    foreach ($submittedFields as $fieldKey => $fieldValue) {
-      if (strpos($fieldKey, $fieldToFind) > 0) {
-        return $fieldKey;
+  private function isFieldYourPresence($fieldKey) {
+    foreach ($this->presenceOfDay as $dayNumber => $customFieldIdAndName) {
+      if (strpos($fieldKey, $customFieldIdAndName[0]) > 0) {
+        return TRUE;
       }
     }
 
-    return '';
+    return FALSE;
   }
+
+  private function getDayNumber($fieldKey) {
+    foreach ($this->presenceOfDay as $dayNumber => $customFieldIdAndName) {
+      if (strpos($fieldKey, $customFieldIdAndName[0]) > 0) {
+        return $dayNumber;
+      }
+    }
+
+    return 0;
+  }
+
+  private function willThePersonAttendOnDay(FormStateInterface $formState, int $dayNumber) {
+    // loop over the submitted fields
+    $submittedFields = $formState->getValues();
+    foreach ($submittedFields as $fieldKey => $fieldValue) {
+      if ($this->isFieldWillYouAttendOnDay($fieldKey, $dayNumber)) {
+        if ($fieldValue == 1) {
+          return TRUE;
+        }
+        else {
+          return FALSE;
+        }
+      }
+    }
+
+    // we don't have the field, so we assume he/she will attend
+    return TRUE;
+  }
+
+  private function isFieldWillYouAttendOnDay($fieldKey, $dayNumber) {
+    if (strpos($fieldKey, $this->willYouAttendDay[$dayNumber][0]) > 0) {
+      return TRUE;
+    }
+    else {
+      return FALSE;
+    }
+  }
+
 }
