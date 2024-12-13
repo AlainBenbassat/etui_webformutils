@@ -40,6 +40,9 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
     5 => ['custom_639', 'Presence_day5'],
   ];
 
+  private $willTakePartInTheMeetingRoom = 1;
+  private $willTakePartOnline = 2;
+
   /**
    * Webform validate handler.
    *
@@ -73,7 +76,7 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
     foreach ($this->willYouAttendDay as $dayNumber => $customFieldWillYouAttend) {
       foreach ($submittedFields as $fieldKey => $fieldValue) {
         if ($this->isWillYouAttendfield($fieldKey, $customFieldWillYouAttend)) {
-          if (!$this->isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants)) {
+          if ($fieldValue == $this->willTakePartInTheMeetingRoom && !$this->isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants)) {
             $fieldKeyPresence = $this->getPresenceKeyOfDay($dayNumber, $submittedFields);
             $invalidFields[$fieldKeyPresence] = 'ERROR: Your submission is not accepted! Please note that the number of seats in the meeting room is restricted, therefore if you can no longer opt for attendance in person you can still attend the event ONLINE. If you would prefer to take part in person, you can still indicate this in the notes field. In case some other participants cancel their attendance, we will take your preference into account and will let you know if you can participate in the meeting room. Thank you for your understanding.';
           }
@@ -137,16 +140,15 @@ class EtuiCheckMaxPhysicalParticipants extends WebformHandlerBase {
 
   private function isPhysicalPresenceAllowed($dayNumber, $eventId, $maxPhysicalParticipants) {
     $customFieldName = $this->presenceOfDay[$dayNumber][1];
-    $willAttendInMeetingRoom = 1;
 
     $participants = \Civi\Api4\Participant::get(FALSE)
-      ->addSelect("Participant_Presence.$customFieldName")
+      ->selectRowCount()
       ->addWhere('event_id', '=', $eventId)
-      ->addWhere("Participant_Presence.$customFieldName", '=', $willAttendInMeetingRoom)
+      ->addWhere("Participant_Presence.$customFieldName", '=', $this->willTakePartInTheMeetingRoom)
       ->addWhere('status_id', 'IN', [1, 2])
       ->execute();
 
-    if (count($participants) >= $maxPhysicalParticipants) {
+    if ($participants->countMatched() >= $maxPhysicalParticipants) {
       return FALSE;
     }
     else {
